@@ -1,0 +1,83 @@
+name: 'Run Testbox'
+description: 'Second half of the Blacksmith Testbox action pair. Phones home with ready status, prints connection info, and keeps the runner alive until idle timeout.'
+
+inputs:
+  testbox_id:
+    description: 'Testbox session ID'
+    required: true
+  testbox_token:
+    description: 'Bearer token for phone-home authentication'
+    required: true
+  idle_timeout:
+    description: 'Idle timeout in minutes'
+    required: false
+    default: '10'
+  api_url:
+    description: 'Backend API URL for phone-home callbacks'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Run Testbox
+      shell: bash
+      run: |
+        # Resolve host info
+        if [ -n "$BLACKSMITH_HOSTNAME" ]; then
+          RUNNER_HOST="$BLACKSMITH_HOSTNAME"
+        else
+          RUNNER_HOST="$BLACKSMITH_HOST_PUBLIC_IP"
+        fi
+        RUNNER_SSH_PORT="${BLACKSMITH_SSH_PORT:-22}"
+
+        # Phone home (ready)
+        curl -s -f -X POST "${API_URL}/api/testbox/phone-home" \
+          -H "Content-Type: application/json" \
+          -H "Authorization: Bearer ${TESTBOX_TOKEN}" \
+          -d "{
+            \"testbox_id\": \"${TESTBOX_ID}\",
+            \"status\": \"ready\",
+            \"ip_address\": \"${RUNNER_HOST}\",
+            \"ssh_port\": \"${RUNNER_SSH_PORT}\",
+            \"working_directory\": \"${GITHUB_WORKSPACE}\",
+            \"adopted_run_id\": \"${GITHUB_RUN_ID}\",
+            \"metadata\": {}
+          }" || echo "Warning: phone-home (ready) failed, continuing in degraded mode"
+        echo "Phone-home (ready) complete."
+
+        # Print connection info
+        echo "============================================"
+        echo "Testbox ready!"
+        echo "  Testbox ID:         ${TESTBOX_ID}"
+        echo "  Runner host:        ${RUNNER_HOST}"
+        echo "  SSH port:           ${RUNNER_SSH_PORT}"
+        echo "  Working directory:  ${GITHUB_WORKSPACE}"
+        echo "  Run ID:             ${GITHUB_RUN_ID}"
+        echo "  SSH:                ssh -p ${RUNNER_SSH_PORT} runner@${RUNNER_HOST}"
+        echo "============================================"
+
+        # Idle timeout monitoring loop
+        LAST_ACTIVITY=$(date +%s)
+        IDLE_TIMEOUT_SECONDS=$(( ${IDLE_TIMEOUT} * 60 ))
+
+        while true; do
+          sleep 30
+
+          NOW=$(date +%s)
+
+          if [ -f ~/.testbox-last-activity ]; then
+            LAST_ACTIVITY=$(stat -c %Y ~/.testbox-last-activity)
+          fi
+
+          IDLE_SECONDS=$(( NOW - LAST_ACTIVITY ))
+
+          if [ "$IDLE_SECONDS" -ge "$IDLE_TIMEOUT_SECONDS" ]; then
+            echo "Idle timeout reached (${IDLE_TIMEOUT} minutes). Shutting down."
+            exit 0
+          fi
+        done
+      env:
+        API_URL: ${{ inputs.api_url }}
+        TESTBOX_ID: ${{ inputs.testbox_id }}
+        TESTBOX_TOKEN: ${{ inputs.testbox_token }}
+        IDLE_TIMEOUT: ${{ inputs.idle_timeout }}
