@@ -44,4 +44,9 @@ steps:
 
 ## Idle Timeout
 
-The action monitors a marker file at `~/.testbox-last-activity`. The Testbox CLI touches this file on every `testbox run` invocation (via rsync/ssh). If no activity is detected for the configured idle timeout (default 10 minutes), the action exits cleanly and the GitHub Actions job completes normally, allowing the VM to be reclaimed.
+The action uses hybrid activity detection to determine when the runner is idle:
+
+1. **Active SSH connections** — every 30 seconds, the loop checks for active TCP connections to the runner's SSH port via `ss`. This catches interactive SSH sessions, long-running one-shot commands, and rsync transfers — anything that holds a connection open during a polling interval.
+2. **Marker file** — the Blacksmith CLI touches `~/.testbox-last-activity` on every `testbox run` invocation. This catches short-lived commands that complete between polling intervals.
+
+Any signal from either source resets the idle timer. If no activity is detected for the configured idle timeout (default 10 minutes), the action exits cleanly and the GitHub Actions job completes normally, allowing the VM to be reclaimed.

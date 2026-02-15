@@ -57,6 +57,18 @@ runs:
         echo "============================================"
 
         # Idle timeout monitoring loop
+        #
+        # Hybrid activity detection:
+        #   1. Active SSH connections to the runner port (catches interactive
+        #      sessions, long-running commands, rsync transfers — anything
+        #      that holds a connection open during a polling interval)
+        #   2. Marker file ~/.testbox-last-activity (the Blacksmith CLI
+        #      touches this on every `testbox run` invocation, catching
+        #      short-lived commands that complete between polling intervals)
+        #
+        # Any signal resets the idle timer. Shutdown only happens after the
+        # full idle_timeout elapses with zero activity from either source.
+
         LAST_ACTIVITY=$(date +%s)
         IDLE_TIMEOUT_SECONDS=$(( ${IDLE_TIMEOUT} * 60 ))
 
@@ -65,8 +77,15 @@ runs:
 
           NOW=$(date +%s)
 
-          if [ -f ~/.testbox-last-activity ]; then
-            LAST_ACTIVITY=$(stat -c %Y ~/.testbox-last-activity)
+          # Check for active SSH connections to the runner's SSH port
+          if ss -tnp 2>/dev/null | grep -q ":${RUNNER_SSH_PORT}\b" ; then
+            LAST_ACTIVITY=$NOW
+          # Fall back to the marker file for short-lived commands
+          elif [ -f ~/.testbox-last-activity ]; then
+            FILE_MTIME=$(stat -c %Y ~/.testbox-last-activity)
+            if [ "$FILE_MTIME" -gt "$LAST_ACTIVITY" ]; then
+              LAST_ACTIVITY=$FILE_MTIME
+            fi
           fi
 
           IDLE_SECONDS=$(( NOW - LAST_ACTIVITY ))
