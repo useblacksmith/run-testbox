@@ -14,9 +14,9 @@ runs:
         fi
 
         TESTBOX_ID=$(cat "$STATE/testbox_id")
+        INSTALLATION_MODEL_ID=$(cat "$STATE/installation_model_id")
         IDLE_TIMEOUT=$(cat "$STATE/idle_timeout" 2>/dev/null)
         IDLE_TIMEOUT="${IDLE_TIMEOUT:-10}"
-        VM_ID=$(cat "$STATE/vm_id")
         API_URL=$(cat "$STATE/api_url")
         RUNNER_HOST=$(cat "$STATE/runner_host")
         RUNNER_SSH_PORT=$(cat "$STATE/runner_ssh_port")
@@ -28,8 +28,8 @@ runs:
           -H "Content-Type: application/json" \
           -d "{
             \"testbox_id\": \"${TESTBOX_ID}\",
+            \"installation_model_id\": ${INSTALLATION_MODEL_ID},
             \"status\": \"ready\",
-            \"vm_id\": \"${VM_ID}\",
             \"ip_address\": \"${RUNNER_HOST}\",
             \"ssh_port\": \"${RUNNER_SSH_PORT}\",
             \"working_directory\": \"${WORKING_DIRECTORY}\",
