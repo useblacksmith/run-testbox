@@ -28,7 +28,7 @@ runs:
           -H "Content-Type: application/json" \
           -d "{
             \"testbox_id\": \"${TESTBOX_ID}\",
-            \"installation_model_id\": ${INSTALLATION_MODEL_ID},
+            \"installation_model_id\": \"${INSTALLATION_MODEL_ID}\",
             \"status\": \"ready\",
             \"ip_address\": \"${RUNNER_HOST}\",
             \"ssh_port\": \"${RUNNER_SSH_PORT}\",
