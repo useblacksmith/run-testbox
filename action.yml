@@ -50,7 +50,8 @@ runs:
         # full idle_timeout elapses with zero activity from either source.
 
         LAST_ACTIVITY=$(date +%s)
-        IDLE_TIMEOUT_SECONDS=$(( ${IDLE_TIMEOUT} * 60 ))
+        IDLE_TIMEOUT="${IDLE_TIMEOUT:-10}"
+        IDLE_TIMEOUT_SECONDS=$(( IDLE_TIMEOUT * 60 ))
 
         while true; do
           sleep 30
