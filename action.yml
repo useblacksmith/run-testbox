@@ -1,20 +1,5 @@
 name: 'Run Testbox'
-description: 'Second half of the Blacksmith Testbox action pair. Phones home with ready status, prints connection info, and keeps the runner alive until idle timeout.'
-
-inputs:
-  testbox_id:
-    description: 'Testbox session ID'
-    required: true
-  testbox_token:
-    description: 'Bearer token for phone-home authentication'
-    required: true
-  idle_timeout:
-    description: 'Idle timeout in minutes'
-    required: false
-    default: '10'
-  api_url:
-    description: 'Backend API URL for phone-home callbacks'
-    required: true
+description: 'Keeps the testbox runner alive until idle timeout. Reads config from the state directory written by useblacksmith/begin-testbox.'
 
 runs:
   using: 'composite'
@@ -22,37 +7,44 @@ runs:
     - name: Run Testbox
       shell: bash
       run: |
-        # Resolve host info
-        if [ -n "$BLACKSMITH_HOSTNAME" ]; then
-          RUNNER_HOST="$BLACKSMITH_HOSTNAME"
-        else
-          RUNNER_HOST="$BLACKSMITH_HOST_PUBLIC_IP"
+        STATE=/tmp/.testbox
+        if [ ! -d "$STATE" ]; then
+          echo "Error: No testbox state found. Did you run useblacksmith/begin-testbox first?"
+          exit 1
         fi
-        RUNNER_SSH_PORT="${BLACKSMITH_SSH_PORT:-22}"
+
+        TESTBOX_ID=$(cat "$STATE/testbox_id")
+        IDLE_TIMEOUT=$(cat "$STATE/idle_timeout" 2>/dev/null)
+        IDLE_TIMEOUT="${IDLE_TIMEOUT:-10}"
+        VM_ID=$(cat "$STATE/vm_id")
+        API_URL=$(cat "$STATE/api_url")
+        RUNNER_HOST=$(cat "$STATE/runner_host")
+        RUNNER_SSH_PORT=$(cat "$STATE/runner_ssh_port")
+        WORKING_DIRECTORY=$(cat "$STATE/working_directory")
+        ADOPTED_RUN_ID=$(cat "$STATE/adopted_run_id")
 
         # Phone home (ready)
         curl -s -f -X POST "${API_URL}/api/testbox/phone-home" \
           -H "Content-Type: application/json" \
-          -H "Authorization: Bearer ${TESTBOX_TOKEN}" \
           -d "{
             \"testbox_id\": \"${TESTBOX_ID}\",
             \"status\": \"ready\",
+            \"vm_id\": \"${VM_ID}\",
             \"ip_address\": \"${RUNNER_HOST}\",
             \"ssh_port\": \"${RUNNER_SSH_PORT}\",
-            \"working_directory\": \"${GITHUB_WORKSPACE}\",
-            \"adopted_run_id\": \"${GITHUB_RUN_ID}\",
+            \"working_directory\": \"${WORKING_DIRECTORY}\",
+            \"adopted_run_id\": \"${ADOPTED_RUN_ID}\",
             \"metadata\": {}
           }" || echo "Warning: phone-home (ready) failed, continuing in degraded mode"
         echo "Phone-home (ready) complete."
 
-        # Print connection info
         echo "============================================"
         echo "Testbox ready!"
         echo "  Testbox ID:         ${TESTBOX_ID}"
         echo "  Runner host:        ${RUNNER_HOST}"
         echo "  SSH port:           ${RUNNER_SSH_PORT}"
-        echo "  Working directory:  ${GITHUB_WORKSPACE}"
-        echo "  Run ID:             ${GITHUB_RUN_ID}"
+        echo "  Working directory:  ${WORKING_DIRECTORY}"
+        echo "  Run ID:             ${ADOPTED_RUN_ID}"
         echo "  SSH:                ssh -p ${RUNNER_SSH_PORT} runner@${RUNNER_HOST}"
         echo "============================================"
 
@@ -60,27 +52,23 @@ runs:
         #
         # Hybrid activity detection:
         #   1. Active SSH connections to the runner port (catches interactive
-        #      sessions, long-running commands, rsync transfers — anything
-        #      that holds a connection open during a polling interval)
+        #      sessions, long-running commands, rsync transfers)
         #   2. Marker file ~/.testbox-last-activity (the Blacksmith CLI
-        #      touches this on every `testbox run` invocation, catching
-        #      short-lived commands that complete between polling intervals)
+        #      touches this on every `testbox run` invocation)
         #
         # Any signal resets the idle timer. Shutdown only happens after the
         # full idle_timeout elapses with zero activity from either source.
 
         LAST_ACTIVITY=$(date +%s)
-        IDLE_TIMEOUT_SECONDS=$(( ${IDLE_TIMEOUT} * 60 ))
+        IDLE_TIMEOUT_SECONDS=$(( IDLE_TIMEOUT * 60 ))
 
         while true; do
           sleep 30
 
           NOW=$(date +%s)
 
-          # Check for active SSH connections to the runner's SSH port
           if ss -tnp 2>/dev/null | grep -q ":${RUNNER_SSH_PORT}\b" ; then
             LAST_ACTIVITY=$NOW
-          # Fall back to the marker file for short-lived commands
           elif [ -f ~/.testbox-last-activity ]; then
             FILE_MTIME=$(stat -c %Y ~/.testbox-last-activity)
             if [ "$FILE_MTIME" -gt "$LAST_ACTIVITY" ]; then
@@ -95,8 +83,3 @@ runs:
             exit 0
           fi
         done
-      env:
-        API_URL: ${{ inputs.api_url }}
-        TESTBOX_ID: ${{ inputs.testbox_id }}
-        TESTBOX_TOKEN: ${{ inputs.testbox_token }}
-        IDLE_TIMEOUT: ${{ inputs.idle_timeout }}
