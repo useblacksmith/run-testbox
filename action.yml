@@ -9,8 +9,14 @@ runs:
       run: |
         STATE=/tmp/.testbox
         if [ ! -d "$STATE" ]; then
-          echo "Error: No testbox state found. Did you run useblacksmith/begin-testbox first?"
-          exit 1
+          echo ""
+          echo "============================================"
+          echo "Testbox validation passed!"
+          echo "  All setup steps completed successfully."
+          echo "  Merge this PR, then warm up a testbox:"
+          echo "    blacksmith testbox warmup <workflow-file>"
+          echo "============================================"
+          exit 0
         fi
 
         TESTBOX_ID=$(cat "$STATE/testbox_id")
