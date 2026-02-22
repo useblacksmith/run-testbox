@@ -109,6 +109,17 @@ runs:
 
           if [ "$IDLE_SECONDS" -ge "$IDLE_TIMEOUT_SECONDS" ]; then
             echo "Idle timeout reached (${IDLE_TIMEOUT} minutes). Shutting down."
+            curl -s -f --max-time 10 -X POST "${API_URL}/api/testbox/phone-home" \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer ${AUTH_TOKEN}" \
+              -d "{
+                \"testbox_id\": \"${TESTBOX_ID}\",
+                \"installation_model_id\": ${INSTALLATION_MODEL_ID},
+                \"status\": \"completed\",
+                \"ip_address\": \"${RUNNER_HOST}\",
+                \"adopted_run_id\": \"${ADOPTED_RUN_ID}\",
+                \"metadata\": {}
+              }" || echo "Warning: phone-home (completed) failed"
             exit 0
           fi
         done
