@@ -5,17 +5,21 @@ runs:
   using: 'composite'
   steps:
     - name: Run Testbox
+      env:
+        JOB_STATUS: ${{ job.status }}
       shell: bash
       run: |
         STATE=/tmp/.testbox
         if [ ! -d "$STATE" ]; then
-          echo ""
-          echo "============================================"
-          echo "Testbox validation passed!"
-          echo "  All setup steps completed successfully."
-          echo "  Merge this PR, then warm up a testbox:"
-          echo "    blacksmith testbox warmup <workflow-file>"
-          echo "============================================"
+          if [ "$JOB_STATUS" = "success" ]; then
+            echo ""
+            echo "============================================"
+            echo "Testbox validation passed!"
+            echo "  All setup steps completed successfully."
+            echo "  Merge this PR, then warm up a testbox:"
+            echo "    blacksmith testbox warmup <workflow-file>"
+            echo "============================================"
+          fi
           exit 0
         fi
 
@@ -29,6 +33,23 @@ runs:
         RUNNER_SSH_PORT=$(cat "$STATE/runner_ssh_port")
         WORKING_DIRECTORY=$(cat "$STATE/working_directory")
         ADOPTED_RUN_ID=$(cat "$STATE/adopted_run_id")
+
+        # If the job is failing (a setup step failed), report hydration failure
+        if [ "$JOB_STATUS" != "success" ]; then
+          curl -s -f -X POST "${API_URL}/api/testbox/phone-home" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${AUTH_TOKEN}" \
+            -d "{
+              \"testbox_id\": \"${TESTBOX_ID}\",
+              \"installation_model_id\": ${INSTALLATION_MODEL_ID},
+              \"status\": \"hydration_failed\",
+              \"ip_address\": \"${RUNNER_HOST}\",
+              \"adopted_run_id\": \"${ADOPTED_RUN_ID}\",
+              \"metadata\": {}
+            }" || echo "Warning: phone-home (hydration_failed) failed"
+          echo "Hydration failed — reported to backend."
+          exit 0
+        fi
 
         # Phone home (ready)
         curl -s -f -X POST "${API_URL}/api/testbox/phone-home" \
