@@ -1,0 +1,56 @@
+name: Azure login verification
+
+on:
+  push:
+    branches: [devin/azure-login-verify]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  verify:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - name: Azure CLI preinstalled check
+        run: |
+          which az
+          az --version
+
+      - name: Mint GitHub OIDC id-token
+        run: |
+          echo "ACTIONS_ID_TOKEN_REQUEST_URL set: ${ACTIONS_ID_TOKEN_REQUEST_URL:+yes}"
+          RESP=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=api://AzureADTokenExchange")
+          TOKEN=$(echo "$RESP" | jq -r '.value')
+          if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+            echo "Failed to mint OIDC token"; echo "$RESP"; exit 1
+          fi
+          echo "OIDC token minted OK"
+          echo "$TOKEN" | cut -d. -f2 | base64 -d 2>/dev/null | jq '{iss, aud, sub, repository, job_workflow_ref, runner_environment}' || true
+
+      - name: Egress checks (Azure + VS Marketplace)
+        run: |
+          set -x
+          for url in \
+            https://login.microsoftonline.com/common/discovery/instance?api-version=1.1\&authorization_endpoint=https://login.microsoftonline.com/common/oauth2/v2.0/authorize \
+            https://management.azure.com/metadata/endpoints?api-version=2020-06-01 \
+            https://graph.microsoft.com/v1.0/ \
+            https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery \
+            https://app.vssps.visualstudio.com/_apis/connectionData \
+            https://dev.azure.com/ ; do
+            code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$url")
+            echo "EGRESS $url -> HTTP $code"
+          done
+
+      - name: Report egress IP
+        run: |
+          echo "Egress IP: $(curl -sS --max-time 10 https://api.ipify.org)"
+
+      - name: azure/login@v2 OIDC mode (only if secrets present)
+        if: ${{ vars.AZURE_CLIENT_ID != '' }}
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
