@@ -47,6 +47,20 @@ jobs:
         run: |
           echo "Egress IP: $(curl -sS --max-time 10 https://api.ipify.org)"
 
+      - name: Simulate azure/login OIDC token exchange (expect AADSTS error, proves network path)
+        run: |
+          RESP=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=api://AzureADTokenExchange")
+          TOKEN=$(echo "$RESP" | jq -r '.value')
+          OUT=$(az login --service-principal -u 00000000-0000-0000-0000-000000000001 --tenant 00000000-0000-0000-0000-000000000002 --federated-token "$TOKEN" 2>&1 || true)
+          echo "$OUT" | head -5
+          echo "$OUT" | grep -q AADSTS && echo "OIDC-EXCHANGE-PATH-OK: reached Entra ID token endpoint" || { echo "no AADSTS response"; exit 1; }
+
+      - name: Simulate azure/login client-secret mode (expect AADSTS error, proves network path)
+        run: |
+          OUT=$(az login --service-principal -u 00000000-0000-0000-0000-000000000001 -p dummy-secret --tenant 00000000-0000-0000-0000-000000000002 2>&1 || true)
+          echo "$OUT" | head -5
+          echo "$OUT" | grep -q AADSTS && echo "SECRET-EXCHANGE-PATH-OK: reached Entra ID token endpoint" || { echo "no AADSTS response"; exit 1; }
+
   azure-login:
     runs-on: blacksmith-4vcpu-ubuntu-2404
     continue-on-error: true
