@@ -13,8 +13,6 @@ jobs:
   verify:
     runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
-      - uses: actions/checkout@v4
-
       - name: Azure CLI preinstalled check
         run: |
           which az
