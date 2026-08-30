@@ -51,6 +51,15 @@ runs:
           exit 0
         fi
 
+        # The advertised port may be forwarded by the host (e.g. 64000 -> 22).
+        # Activity must match sshd's VM-local listeners, not the client endpoint.
+        SSHD_CONFIG=$(sudo -n sshd -T)
+        SSH_FILTER=$(awk '$1 == "port" { printf "%ssport = :%s", sep, $2; sep = " or " }' <<< "$SSHD_CONFIG")
+        if [ -z "$SSH_FILTER" ]; then
+          echo "Cannot resolve sshd listener ports; refusing to treat unknown activity as idle." >&2
+          exit 1
+        fi
+
         # Phone home (ready)
         curl -s -f -X POST "${API_URL}/api/testbox/phone-home" \
           -H "Content-Type: application/json" \
@@ -80,7 +89,7 @@ runs:
         # Idle timeout monitoring loop
         #
         # Hybrid activity detection:
-        #   1. Active SSH connections to the runner port (catches interactive
+        #   1. Established connections to sshd's local ports (catches interactive
         #      sessions, long-running commands, rsync transfers)
         #   2. Marker file ~/.testbox-last-activity (the Blacksmith CLI
         #      touches this on every `testbox run` invocation)
@@ -96,7 +105,9 @@ runs:
 
           NOW=$(date +%s)
 
-          if ss -tnp 2>/dev/null | grep -q ":${RUNNER_SSH_PORT}\b" ; then
+          # Keep inspection failure distinct from an empty successful socket query.
+          SSH_CONNECTIONS=$(ss -Htn state established "( ${SSH_FILTER} )")
+          if [ -n "$SSH_CONNECTIONS" ]; then
             LAST_ACTIVITY=$NOW
           elif [ -f ~/.testbox-last-activity ]; then
             FILE_MTIME=$(stat -c %Y ~/.testbox-last-activity)
