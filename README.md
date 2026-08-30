@@ -32,7 +32,7 @@ This action takes no inputs. All configuration is read from the `/tmp/.testbox/`
 
 The action uses hybrid activity detection to determine when the runner is idle:
 
-1. **Active SSH connections** — every 30 seconds, the loop checks for active TCP connections to the runner's SSH port via `ss`. This catches interactive SSH sessions, long-running one-shot commands, and rsync transfers — anything that holds a connection open during a polling interval.
+1. **Active SSH connections** — every 30 seconds, the loop checks established TCP connections to sshd's VM-local listener ports via `ss`. Listener ports come from `sudo -n sshd -T`; the advertised client port may be forwarded and remains unchanged in connection info. This catches interactive SSH sessions, long-running one-shot commands, and rsync transfers — anything that holds a connection open during a polling interval. Failure to inspect the listeners or sockets fails the action rather than declaring the runner idle.
 2. **Marker file** — the Blacksmith CLI touches `~/.testbox-last-activity` on every `testbox run` invocation. This catches short-lived commands that complete between polling intervals.
 
-Any signal from either source resets the idle timer. If no activity is detected for the configured idle timeout (default 10 minutes), the action exits cleanly and the GitHub Actions job completes normally, allowing the VM to be reclaimed.
+Any signal from either source resets the idle timer. If no activity is detected for the configured idle timeout (default 10 minutes), the action exits cleanly and the GitHub Actions job completes normally, allowing the VM to be reclaimed. That job result describes the hosting lifecycle, not the result of a command submitted with `blacksmith testbox run`; use the command's own exit status and reports for validation.

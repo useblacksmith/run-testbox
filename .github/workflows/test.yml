@@ -17,3 +17,6 @@ jobs:
 
       - name: Lint action.yml
         run: yamllint -d relaxed action.yml
+
+      - name: Test activity lifecycle
+        run: python3 -m unittest discover -s tests -v
