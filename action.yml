@@ -88,6 +88,20 @@ runs:
         # Any signal resets the idle timer. Shutdown only happens after the
         # full idle_timeout elapses with zero activity from either source.
 
+        # Linux has ss(8) and GNU stat; macOS has neither, so fall back to
+        # netstat and BSD stat there.
+        has_ssh_connection() {
+          if command -v ss >/dev/null 2>&1; then
+            ss -tn 2>/dev/null | grep -q ":${RUNNER_SSH_PORT}\b"
+          else
+            netstat -an -p tcp 2>/dev/null | grep ESTABLISHED | grep -q "[.:]${RUNNER_SSH_PORT} "
+          fi
+        }
+
+        file_mtime() {
+          stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || echo 0
+        }
+
         LAST_ACTIVITY=$(date +%s)
         IDLE_TIMEOUT_SECONDS=$(( IDLE_TIMEOUT * 60 ))
 
@@ -96,10 +110,10 @@ runs:
 
           NOW=$(date +%s)
 
-          if ss -tnp 2>/dev/null | grep -q ":${RUNNER_SSH_PORT}\b" ; then
+          if has_ssh_connection; then
             LAST_ACTIVITY=$NOW
           elif [ -f ~/.testbox-last-activity ]; then
-            FILE_MTIME=$(stat -c %Y ~/.testbox-last-activity)
+            FILE_MTIME=$(file_mtime ~/.testbox-last-activity)
             if [ "$FILE_MTIME" -gt "$LAST_ACTIVITY" ]; then
               LAST_ACTIVITY=$FILE_MTIME
             fi
