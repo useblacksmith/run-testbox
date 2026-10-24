@@ -99,7 +99,8 @@ runs:
           if ss -tnp 2>/dev/null | grep -q ":${RUNNER_SSH_PORT}\b" ; then
             LAST_ACTIVITY=$NOW
           elif [ -f ~/.testbox-last-activity ]; then
-            FILE_MTIME=$(stat -c %Y ~/.testbox-last-activity)
+            # GNU stat on Linux, BSD stat on macOS
+            FILE_MTIME=$(stat -c %Y ~/.testbox-last-activity 2>/dev/null || stat -f %m ~/.testbox-last-activity)
             if [ "$FILE_MTIME" -gt "$LAST_ACTIVITY" ]; then
               LAST_ACTIVITY=$FILE_MTIME
             fi
