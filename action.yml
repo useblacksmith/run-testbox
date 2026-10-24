@@ -80,13 +80,29 @@ runs:
         # Idle timeout monitoring loop
         #
         # Hybrid activity detection:
-        #   1. Active SSH connections to the runner port (catches interactive
+        #   1. Established connections to the VM's sshd (catches interactive
         #      sessions, long-running commands, rsync transfers)
         #   2. Marker file ~/.testbox-last-activity (the Blacksmith CLI
         #      touches this on every `testbox run` invocation)
         #
         # Any signal resets the idle timer. Shutdown only happens after the
         # full idle_timeout elapses with zero activity from either source.
+
+        # sshd in the VM listens on 22 on Linux and macOS. RUNNER_SSH_PORT is the
+        # host's public port, which iptables (Linux) or pf (macOS) forwards to the
+        # VM's port 22, so it never appears as a local port inside the VM.
+        SSHD_PORT=22
+
+        # macOS has no ss, and its netstat prints the local address as host.port.
+        ssh_connected() {
+          if command -v ss >/dev/null; then
+            [ -n "$(ss -Htn state established "( sport = :${SSHD_PORT} )" 2>/dev/null)" ]
+          else
+            netstat -an -p tcp 2>/dev/null | awk -v suffix=".${SSHD_PORT}" '
+              $6 == "ESTABLISHED" && substr($4, length($4) - length(suffix) + 1) == suffix { found = 1 }
+              END { exit !found }'
+          fi
+        }
 
         LAST_ACTIVITY=$(date +%s)
         IDLE_TIMEOUT_SECONDS=$(( IDLE_TIMEOUT * 60 ))
@@ -96,7 +112,7 @@ runs:
 
           NOW=$(date +%s)
 
-          if ss -tnp 2>/dev/null | grep -q ":${RUNNER_SSH_PORT}\b" ; then
+          if ssh_connected; then
             LAST_ACTIVITY=$NOW
           elif [ -f ~/.testbox-last-activity ]; then
             # GNU stat on Linux, BSD stat on macOS
